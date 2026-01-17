@@ -1,0 +1,32 @@
+{
+  "id": "64524bbd-e13b-4282-b1b4-43494dde51c5",
+  "name": "AC_DocumentApproval",
+  "publisher": "ACME Software",
+  "version": "1.0.0.58",
+  "brief": "Document Approval Process for Joan Al Kuwait",
+  "description": "Enables structured entry, review, approval, and locking of document proposals without creating any financial postings.",
+    "privacyStatement": "",
+    "EULA": "",
+    "help": "",
+    "url": "",
+    "logo": "",
+    "dependencies": [],
+    "screenshots": [],
+    "platform": "1.0.0.0",
+    "application": "27.0.0.0",
+    "idRanges": [
+        {
+            "from": 77100,
+            "to": 80149
+        }
+    ],
+     "resourceExposurePolicy": {
+    "allowDebugging": false,
+    "allowDownloadingSource": false,
+    "includeSourceInSymbolFile": false
+  },
+    "runtime": "16.0",
+    "features": [
+        "NoImplicitWith"
+    ]
+}

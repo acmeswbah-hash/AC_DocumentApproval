@@ -1,0 +1,14 @@
+# Build output
+.alpackages/
+.alcache/
+*.app
+
+# VS Code
+.vscode/settings.json
+
+# Symbols
+*.navxsymbol
+
+# Temporary files
+*.bak
+*.tmp
