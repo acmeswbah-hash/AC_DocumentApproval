@@ -1,11 +1,6 @@
 codeunit 77101 "Document Approval Workflow"
 {
     // This codeunit consolidates all workflow logic for Document Approvals.
-    // It handles:
-    // 1. Workflow Events (WHEN)
-    // 2. Workflow Responses (THEN)
-    // 3. Workflow Template (Default structure)
-    // 4. Integration with standard Approvals Mgmt.
 
     var
         WorkflowMgmt: Codeunit "Workflow Management";
@@ -19,16 +14,7 @@ codeunit 77101 "Document Approval Workflow"
 
         // Event Descriptions
         SendDocApprovalForApprovalEventDescTxt: Label 'Approval of an Employee Document is requested.';
-        ApproveDocApprovalEventDescTxt: Label 'An Employee Document approval request is approved.';
-        RejectDocApprovalEventDescTxt: Label 'An Employee Document approval request is rejected.';
-        DelegateDocApprovalEventDescTxt: Label 'An Employee Document approval request is delegated.';
         CancelDocApprovalEventDescTxt: Label 'An Employee Document approval request is canceled.';
-
-        // Custom Response Descriptions
-        CreateDocApprovalRequestsDescTxt: Label 'Create an approval request for the document.';
-
-        // Errors/Messages
-        NoWorkflowEnabledErr: Label 'No approval workflow for this record type is enabled.';
 
     // =========================================
     // WORKFLOW EVENT CODES
@@ -36,33 +22,12 @@ codeunit 77101 "Document Approval Workflow"
 
     procedure GetSendDocApprovalForApprovalEventCode(): Code[128]
     begin
-        exit(UpperCase('RunWorkflowOnSendDocumentApproval'));
-    end;
-
-    procedure GetApproveDocApprovalEventCode(): Code[128]
-    begin
-        exit(UpperCase('RunWorkflowOnApproveDocumentApproval'));
-    end;
-
-    procedure GetRejectDocApprovalEventCode(): Code[128]
-    begin
-        exit(UpperCase('RunWorkflowOnRejectDocumentApproval'));
-    end;
-
-    procedure GetDelegateDocApprovalEventCode(): Code[128]
-    begin
-        exit(UpperCase('RunWorkflowOnDelegateDocumentApproval'));
+        exit(UpperCase('RunWorkflowOnSendDocumentApprovalForApproval'));
     end;
 
     procedure GetCancelDocApprovalEventCode(): Code[128]
     begin
-        exit(UpperCase('RunWorkflowOnCancelDocumentApproval'));
-    end;
-
-    // Custom Response Codes
-    procedure GetCreateDocApprRequestsCode(): Code[128]
-    begin
-        exit(UpperCase('CreateDocApprovalRequests'));
+        exit(UpperCase('RunWorkflowOnCancelDocumentApprovalApproval'));
     end;
 
     // =========================================
@@ -72,38 +37,141 @@ codeunit 77101 "Document Approval Workflow"
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Event Handling", 'OnAddWorkflowEventsToLibrary', '', false, false)]
     local procedure OnAddWorkflowEventsToLibrary()
     begin
-        WorkflowEventHandling.AddEventToLibrary(GetSendDocApprovalForApprovalEventCode(), Database::"Document Approval Header", SendDocApprovalForApprovalEventDescTxt, 0, true);
-        WorkflowEventHandling.AddEventToLibrary(GetCancelDocApprovalEventCode(), Database::"Document Approval Header", CancelDocApprovalEventDescTxt, 0, true);
+        SafeAddEventToLibrary(
+            GetSendDocApprovalForApprovalEventCode(),
+            Database::"Document Approval Header",
+            SendDocApprovalForApprovalEventDescTxt,
+            0,
+            true);
 
-        // Sub-events (not entry points)
-        WorkflowEventHandling.AddEventToLibrary(GetApproveDocApprovalEventCode(), Database::"Document Approval Header", ApproveDocApprovalEventDescTxt, 0, false);
-        WorkflowEventHandling.AddEventToLibrary(GetRejectDocApprovalEventCode(), Database::"Document Approval Header", RejectDocApprovalEventDescTxt, 0, false);
-        WorkflowEventHandling.AddEventToLibrary(GetDelegateDocApprovalEventCode(), Database::"Document Approval Header", DelegateDocApprovalEventDescTxt, 0, false);
+        SafeAddEventToLibrary(
+            GetCancelDocApprovalEventCode(),
+            Database::"Document Approval Header",
+            CancelDocApprovalEventDescTxt,
+            0,
+            true);
     end;
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Response Handling", 'OnAddWorkflowResponsesToLibrary', '', false, false)]
-    local procedure OnAddWorkflowResponsesToLibrary()
+    local procedure SafeAddEventToLibrary(FunctionName: Code[128]; TableID: Integer; Description: Text[250]; RequestPageID: Integer; UsedForRecordChange: Boolean)
+    var
+        WorkflowEvent: Record "Workflow Event";
     begin
-        WorkflowResponseHandling.AddResponseToLibrary(GetCreateDocApprRequestsCode(), Database::"Document Approval Header", CreateDocApprovalRequestsDescTxt, '');
+        if WorkflowEvent.Get(FunctionName) then
+            exit;
+
+        WorkflowEvent.Reset();
+        WorkflowEvent.SetRange(Description, Description);
+        if not WorkflowEvent.IsEmpty then
+            exit;
+
+        Clear(WorkflowEvent);
+        WorkflowEvent.Init();
+        WorkflowEvent."Function Name" := FunctionName;
+        WorkflowEvent."Table ID" := TableID;
+        WorkflowEvent.Description := Description;
+        WorkflowEvent."Request Page ID" := RequestPageID;
+        WorkflowEvent."Used for Record Change" := UsedForRecordChange;
+        if WorkflowEvent.Insert(false) then;
     end;
+
+    // =========================================
+    // ADD EVENT PREDECESSORS
+    // =========================================
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Event Handling", 'OnAddWorkflowEventPredecessorsToLibrary', '', false, false)]
     local procedure OnAddWorkflowEventPredecessorsToLibrary(EventFunctionName: Code[128])
     begin
         case EventFunctionName of
-            GetApproveDocApprovalEventCode():
-                WorkflowEventHandling.AddEventPredecessor(GetApproveDocApprovalEventCode(), GetSendDocApprovalForApprovalEventCode());
-            GetRejectDocApprovalEventCode():
-                WorkflowEventHandling.AddEventPredecessor(GetRejectDocApprovalEventCode(), GetSendDocApprovalForApprovalEventCode());
-            GetDelegateDocApprovalEventCode():
-                WorkflowEventHandling.AddEventPredecessor(GetDelegateDocApprovalEventCode(), GetSendDocApprovalForApprovalEventCode());
+            WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode():
+                WorkflowEventHandling.AddEventPredecessor(
+                    WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode(),
+                    GetSendDocApprovalForApprovalEventCode());
+
+            WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode():
+                WorkflowEventHandling.AddEventPredecessor(
+                    WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode(),
+                    GetSendDocApprovalForApprovalEventCode());
+
+            WorkflowEventHandling.RunWorkflowOnDelegateApprovalRequestCode():
+                WorkflowEventHandling.AddEventPredecessor(
+                    WorkflowEventHandling.RunWorkflowOnDelegateApprovalRequestCode(),
+                    GetSendDocApprovalForApprovalEventCode());
+
             GetCancelDocApprovalEventCode():
-                WorkflowEventHandling.AddEventPredecessor(GetCancelDocApprovalEventCode(), GetSendDocApprovalForApprovalEventCode());
+                WorkflowEventHandling.AddEventPredecessor(
+                    GetCancelDocApprovalEventCode(),
+                    GetSendDocApprovalForApprovalEventCode());
         end;
     end;
 
     // =========================================
-    // APPROVALS MGMT. INTEGRATION (CRITICAL FIXES)
+    // ADD TABLE RELATIONS
+    // =========================================
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Event Handling", 'OnAddWorkflowTableRelationsToLibrary', '', false, false)]
+    local procedure OnAddWorkflowTableRelationsToLibrary()
+    var
+        ApprovalEntry: Record "Approval Entry";
+    begin
+        WorkflowSetup.InsertTableRelation(
+            Database::"Document Approval Header",
+            0,
+            Database::"Approval Entry",
+            ApprovalEntry.FieldNo("Record ID to Approve"));
+    end;
+
+    // =========================================
+    // ADD RESPONSE PREDECESSORS
+    // =========================================
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Response Handling", 'OnAddWorkflowResponsePredecessorsToLibrary', '', false, false)]
+    local procedure OnAddWorkflowResponsePredecessorsToLibrary(ResponseFunctionName: Code[128])
+    begin
+        case ResponseFunctionName of
+            WorkflowResponseHandling.SetStatusToPendingApprovalCode():
+                WorkflowResponseHandling.AddResponsePredecessor(
+                    WorkflowResponseHandling.SetStatusToPendingApprovalCode(),
+                    GetSendDocApprovalForApprovalEventCode());
+
+            WorkflowResponseHandling.CreateApprovalRequestsCode():
+                WorkflowResponseHandling.AddResponsePredecessor(
+                    WorkflowResponseHandling.CreateApprovalRequestsCode(),
+                    GetSendDocApprovalForApprovalEventCode());
+
+            WorkflowResponseHandling.SendApprovalRequestForApprovalCode():
+                WorkflowResponseHandling.AddResponsePredecessor(
+                    WorkflowResponseHandling.SendApprovalRequestForApprovalCode(),
+                    GetSendDocApprovalForApprovalEventCode());
+
+            WorkflowResponseHandling.CancelAllApprovalRequestsCode():
+                WorkflowResponseHandling.AddResponsePredecessor(
+                    WorkflowResponseHandling.CancelAllApprovalRequestsCode(),
+                    GetCancelDocApprovalEventCode());
+
+            WorkflowResponseHandling.OpenDocumentCode():
+                begin
+                    WorkflowResponseHandling.AddResponsePredecessor(
+                        WorkflowResponseHandling.OpenDocumentCode(),
+                        GetCancelDocApprovalEventCode());
+                    WorkflowResponseHandling.AddResponsePredecessor(
+                        WorkflowResponseHandling.OpenDocumentCode(),
+                        WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode());
+                end;
+
+            WorkflowResponseHandling.ReleaseDocumentCode():
+                WorkflowResponseHandling.AddResponsePredecessor(
+                    WorkflowResponseHandling.ReleaseDocumentCode(),
+                    WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode());
+
+            WorkflowResponseHandling.RejectAllApprovalRequestsCode():
+                WorkflowResponseHandling.AddResponsePredecessor(
+                    WorkflowResponseHandling.RejectAllApprovalRequestsCode(),
+                    WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode());
+        end;
+    end;
+
+    // =========================================
+    // APPROVALS MGMT. INTEGRATION
     // =========================================
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Approvals Mgmt.", 'OnPopulateApprovalEntryArgument', '', false, false)]
@@ -120,115 +188,181 @@ codeunit 77101 "Document Approval Workflow"
         ApprovalEntryArgument."Table ID" := Database::"Document Approval Header";
         ApprovalEntryArgument."Record ID to Approve" := RecRef.RecordId;
         ApprovalEntryArgument."Document No." := DocumentApprovalHeader."No.";
-        ApprovalEntryArgument."Document Type" := ApprovalEntryArgument."Document Type"::" "; // Important: Stay consistent
+        ApprovalEntryArgument."Document Type" := ApprovalEntryArgument."Document Type"::" ";
         ApprovalEntryArgument.Amount := DocumentApprovalHeader."Total Amount";
         ApprovalEntryArgument."Amount (LCY)" := DocumentApprovalHeader."Total Amount";
     end;
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Event Handling", 'OnAddWorkflowTableRelationsToLibrary', '', false, false)]
-    local procedure OnAddWorkflowTableRelationsToLibrary()
+    // =========================================
+    // RESPONSE HANDLERS
+    // =========================================
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Approvals Mgmt.", 'OnSetStatusToPendingApproval', '', false, false)]
+    local procedure OnSetStatusToPendingApproval(RecRef: RecordRef; var Variant: Variant; var IsHandled: Boolean)
     var
-        WorkflowSetup: Codeunit "Workflow Setup";
-        ApprovalEntry: Record "Approval Entry";
+        DocumentApprovalHeader: Record "Document Approval Header";
     begin
-        WorkflowSetup.InsertTableRelation(
-            Database::"Document Approval Header",
-            0,
-            Database::"Approval Entry",
-            ApprovalEntry.FieldNo("Record ID to Approve")
-        );
+        if RecRef.Number <> Database::"Document Approval Header" then
+            exit;
+
+        RecRef.SetTable(DocumentApprovalHeader);
+        DocumentApprovalHeader.Status := DocumentApprovalHeader.Status::"Pending Approval";
+        DocumentApprovalHeader."Date-Time Sent for Approval" := CurrentDateTime;
+        DocumentApprovalHeader.Modify(true);
+
+        Variant := DocumentApprovalHeader;
+        IsHandled := true;
     end;
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Response Handling", 'OnAddWorkflowResponsePredecessorsToLibrary', '', false, false)]
-    local procedure OnAddWorkflowResponsePredecessorsToLibrary(ResponseFunctionName: Code[128])
-    begin
-        case ResponseFunctionName of
-            WorkflowResponseHandling.SetStatusToPendingApprovalCode():
-                WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.SetStatusToPendingApprovalCode(), GetSendDocApprovalForApprovalEventCode());
-            WorkflowResponseHandling.CreateApprovalRequestsCode():
-                WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.CreateApprovalRequestsCode(), GetSendDocApprovalForApprovalEventCode());
-            WorkflowResponseHandling.SendApprovalRequestForApprovalCode():
-                WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.SendApprovalRequestForApprovalCode(), GetSendDocApprovalForApprovalEventCode());
-            WorkflowResponseHandling.CancelAllApprovalRequestsCode():
-                WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.CancelAllApprovalRequestsCode(), GetCancelDocApprovalEventCode());
-            WorkflowResponseHandling.OpenDocumentCode():
-                begin
-                    WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.OpenDocumentCode(), GetCancelDocApprovalEventCode());
-                    WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.OpenDocumentCode(), WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode());
-                    // Support standard responses
-                    WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.OpenDocumentCode(), WorkflowResponseHandling.CancelAllApprovalRequestsCode());
-                end;
-            WorkflowResponseHandling.ReleaseDocumentCode():
-                WorkflowResponseHandling.AddResponsePredecessor(WorkflowResponseHandling.ReleaseDocumentCode(), WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode());
-            
-            // Custom Response Predecessors
-            GetCreateDocApprRequestsCode():
-                WorkflowResponseHandling.AddResponsePredecessor(GetCreateDocApprRequestsCode(), GetSendDocApprovalForApprovalEventCode());
-        end;
-    end;
-
-    // This ensures standard responses like "Release Document" and "Open Document" work for our table
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Response Handling", 'OnReleaseDocument', '', false, false)]
     local procedure OnReleaseDocument(RecRef: RecordRef; var Handled: Boolean)
+    var
+        DocumentApprovalHeader: Record "Document Approval Header";
     begin
-        if RecRef.Number = Database::"Document Approval Header" then begin
-            UpdateStatus(RecRef, "Document Approval Status"::Approved);
-            Handled := true;
-        end;
+        if RecRef.Number <> Database::"Document Approval Header" then
+            exit;
+
+        RecRef.SetTable(DocumentApprovalHeader);
+        DocumentApprovalHeader.Status := DocumentApprovalHeader.Status::Approved;
+        DocumentApprovalHeader."Approved By" := CopyStr(UserId, 1, MaxStrLen(DocumentApprovalHeader."Approved By"));
+        DocumentApprovalHeader."Approved Date" := Today;
+        DocumentApprovalHeader.Modify(true);
+
+        Handled := true;
     end;
 
     [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Response Handling", 'OnOpenDocument', '', false, false)]
     local procedure OnOpenDocument(RecRef: RecordRef; var Handled: Boolean)
-    begin
-        if RecRef.Number = Database::"Document Approval Header" then begin
-            UpdateStatus(RecRef, "Document Approval Status"::Open);
-            Handled := true;
-        end;
-    end;
-
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Workflow Response Handling", 'OnExecuteWorkflowResponse', '', false, false)]
-    local procedure OnExecuteWorkflowResponse(var ResponseExecuted: Boolean; Variant: Variant; xVariant: Variant; ResponseWorkflowStepInstance: Record "Workflow Step Instance")
-    var
-        WorkflowResponse: Record "Workflow Response";
-    begin
-        if ResponseExecuted then
-            exit;
-
-        if ResponseWorkflowStepInstance."Function Name" = GetCreateDocApprRequestsCode() then begin
-            CreateApprovalEntries(Variant, ResponseWorkflowStepInstance);
-            ResponseExecuted := true;
-        end;
-    end;
-
-    local procedure CreateApprovalEntries(Variant: Variant; WorkflowStepInstance: Record "Workflow Step Instance")
-    var
-        ApprovalsMgmt: Codeunit "Approvals Mgmt.";
-        RecRef: RecordRef;
-    begin
-        RecRef.GetTable(Variant);
-        ApprovalsMgmt.CreateApprovalRequests(RecRef, WorkflowStepInstance);
-    end;
-
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Approvals Mgmt.", 'OnSetStatusToPendingApproval', '', false, false)]
-    local procedure OnSetStatusToPendingApproval(RecRef: RecordRef; var Variant: Variant; var IsHandled: Boolean)
-    begin
-        if RecRef.Number = Database::"Document Approval Header" then begin
-            UpdateStatus(RecRef, "Document Approval Status"::"Pending Approval");
-            IsHandled := true;
-        end;
-    end;
-
-    local procedure UpdateStatus(RecRef: RecordRef; NewStatus: Enum "Document Approval Status")
     var
         DocumentApprovalHeader: Record "Document Approval Header";
     begin
+        if RecRef.Number <> Database::"Document Approval Header" then
+            exit;
+
         RecRef.SetTable(DocumentApprovalHeader);
-        DocumentApprovalHeader.Status := NewStatus;
-        if NewStatus = NewStatus::Approved then begin
-            DocumentApprovalHeader."Approved By" := CopyStr(UserId, 1, 50);
-            DocumentApprovalHeader."Approved Date" := Today;
-        end;
+        DocumentApprovalHeader.Status := DocumentApprovalHeader.Status::Open;
+        DocumentApprovalHeader."Approved By" := '';
+        DocumentApprovalHeader."Approved Date" := 0D;
+        DocumentApprovalHeader."Date-Time Sent for Approval" := 0DT;
         DocumentApprovalHeader.Modify(true);
+
+        Handled := true;
+    end;
+
+    // =========================================
+    // UI TRIGGERS
+    // =========================================
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Document Approval Management", 'OnSendForApproval', '', false, false)]
+    local procedure HandleOnSendForApproval(var DocumentApprovalHeader: Record "Document Approval Header")
+    begin
+        WorkflowMgmt.HandleEvent(GetSendDocApprovalForApprovalEventCode(), DocumentApprovalHeader);
+    end;
+
+    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Document Approval Management", 'OnCancelApproval', '', false, false)]
+    local procedure HandleOnCancelApproval(var DocumentApprovalHeader: Record "Document Approval Header")
+    begin
+        WorkflowMgmt.HandleEvent(GetCancelDocApprovalEventCode(), DocumentApprovalHeader);
+    end;
+
+    // =========================================
+    // HELPER: Check and update document status after approval
+    // Called from the page after approval action
+    // =========================================
+
+    procedure CheckAndUpdateApprovalStatus(var DocumentApprovalHeader: Record "Document Approval Header")
+    var
+        ApprovalEntry: Record "Approval Entry";
+        HasPendingApprovals: Boolean;
+    begin
+        if DocumentApprovalHeader.Status <> DocumentApprovalHeader.Status::"Pending Approval" then
+            exit;
+
+        // Check if there are any pending approvals left
+        ApprovalEntry.SetRange("Table ID", Database::"Document Approval Header");
+        ApprovalEntry.SetRange("Record ID to Approve", DocumentApprovalHeader.RecordId);
+        ApprovalEntry.SetRange(Status, ApprovalEntry.Status::Open);
+        HasPendingApprovals := not ApprovalEntry.IsEmpty;
+
+        // If no more pending approvals, set status to Approved
+        if not HasPendingApprovals then begin
+            DocumentApprovalHeader.Status := DocumentApprovalHeader.Status::Approved;
+            DocumentApprovalHeader."Approved By" := CopyStr(UserId, 1, MaxStrLen(DocumentApprovalHeader."Approved By"));
+            DocumentApprovalHeader."Approved Date" := Today;
+            DocumentApprovalHeader.Modify(true);
+        end;
+    end;
+
+    // =========================================
+    // MANUAL REGISTRATION OF RESPONSE COMBINATIONS
+    // =========================================
+
+    procedure RegisterWorkflowResponseCombinations()
+    var
+        WFEventResponseCombination: Record "WF Event/Response Combination";
+    begin
+        // For Send Document Approval Event
+        InsertEventResponseCombination(GetSendDocApprovalForApprovalEventCode(), WorkflowResponseHandling.SetStatusToPendingApprovalCode());
+        InsertEventResponseCombination(GetSendDocApprovalForApprovalEventCode(), WorkflowResponseHandling.CreateApprovalRequestsCode());
+        InsertEventResponseCombination(GetSendDocApprovalForApprovalEventCode(), WorkflowResponseHandling.SendApprovalRequestForApprovalCode());
+        InsertEventResponseCombination(GetSendDocApprovalForApprovalEventCode(), WorkflowResponseHandling.ShowMessageCode());
+
+        // For Cancel Document Approval Event
+        InsertEventResponseCombination(GetCancelDocApprovalEventCode(), WorkflowResponseHandling.CancelAllApprovalRequestsCode());
+        InsertEventResponseCombination(GetCancelDocApprovalEventCode(), WorkflowResponseHandling.OpenDocumentCode());
+        InsertEventResponseCombination(GetCancelDocApprovalEventCode(), WorkflowResponseHandling.ShowMessageCode());
+
+        // For standard approval events
+        InsertEventResponseCombination(WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode(), WorkflowResponseHandling.ReleaseDocumentCode());
+        InsertEventResponseCombination(WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode(), WorkflowResponseHandling.OpenDocumentCode());
+        InsertEventResponseCombination(WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode(), WorkflowResponseHandling.RejectAllApprovalRequestsCode());
+        InsertEventResponseCombination(WorkflowEventHandling.RunWorkflowOnDelegateApprovalRequestCode(), WorkflowResponseHandling.SendApprovalRequestForApprovalCode());
+
+        Message('Workflow response combinations have been registered successfully.\nPlease close and reopen the Workflows page.');
+    end;
+
+    local procedure InsertEventResponseCombination(EventCode: Code[128]; ResponseCode: Code[128])
+    var
+        WFEventResponseCombination: Record "WF Event/Response Combination";
+    begin
+        WFEventResponseCombination.SetRange(Type, WFEventResponseCombination.Type::Response);
+        WFEventResponseCombination.SetRange("Function Name", ResponseCode);
+        WFEventResponseCombination.SetRange("Predecessor Type", WFEventResponseCombination."Predecessor Type"::"Event");
+        WFEventResponseCombination.SetRange("Predecessor Function Name", EventCode);
+        if not WFEventResponseCombination.IsEmpty then
+            exit;
+
+        WFEventResponseCombination.Init();
+        WFEventResponseCombination.Type := WFEventResponseCombination.Type::Response;
+        WFEventResponseCombination."Function Name" := ResponseCode;
+        WFEventResponseCombination."Predecessor Type" := WFEventResponseCombination."Predecessor Type"::"Event";
+        WFEventResponseCombination."Predecessor Function Name" := EventCode;
+        if WFEventResponseCombination.Insert(false) then;
+    end;
+
+    // =========================================
+    // CLEANUP PROCEDURE
+    // =========================================
+
+    procedure CleanupOrphanedWorkflowEvents()
+    var
+        WorkflowEvent: Record "Workflow Event";
+    begin
+        if WorkflowEvent.Get(GetSendDocApprovalForApprovalEventCode()) then
+            WorkflowEvent.Delete(false);
+
+        if WorkflowEvent.Get(GetCancelDocApprovalEventCode()) then
+            WorkflowEvent.Delete(false);
+
+        WorkflowEvent.Reset();
+        WorkflowEvent.SetRange(Description, SendDocApprovalForApprovalEventDescTxt);
+        WorkflowEvent.DeleteAll(false);
+
+        WorkflowEvent.Reset();
+        WorkflowEvent.SetRange(Description, CancelDocApprovalEventDescTxt);
+        WorkflowEvent.DeleteAll(false);
+
+        Message('Cleanup complete. Now re-open the Workflows page to reinitialize.');
     end;
 
     // =========================================
@@ -238,90 +372,145 @@ codeunit 77101 "Document Approval Workflow"
     procedure CreateDocumentApprovalWorkflowTemplate(): Boolean
     var
         Workflow: Record Workflow;
-    begin
-        exit(InsertDocumentApprovalWorkflowTemplate(Workflow));
-    end;
-
-    local procedure InsertDocumentApprovalWorkflowTemplate(var Workflow: Record Workflow): Boolean
-    var
         WorkflowStep: Record "Workflow Step";
+        WorkflowRule: Record "Workflow Rule";
         WorkflowCode: Code[20];
+        SendEventStepID: Integer;
+        SetPendingStepID: Integer;
+        CreateRequestsStepID: Integer;
+        SendRequestStepID: Integer;
+        ApproveEventStepID: Integer;
+        ReleaseStepID: Integer;
+        RejectEventStepID: Integer;
+        RejectRequestStepID: Integer;
+        ReopenOnRejectStepID: Integer;
+        DelegateEventStepID: Integer;
+        SendDelegateStepID: Integer;
+        CancelEventStepID: Integer;
+        CancelRequestStepID: Integer;
+        ReopenOnCancelStepID: Integer;
     begin
         WorkflowCode := DocumentApprovalWorkflowCodeTxt;
 
-        // Check/Create Workflow record
-        if not Workflow.Get(WorkflowCode) then begin
+        // First, register the response combinations
+        RegisterWorkflowResponseCombinations();
+
+        // Delete existing workflow if exists
+        if Workflow.Get(WorkflowCode) then begin
+            Workflow.Enabled := false;
+            Workflow.Modify();
+
+            WorkflowStep.SetRange("Workflow Code", WorkflowCode);
+            WorkflowStep.DeleteAll(true);
+
+            WorkflowRule.SetRange("Workflow Code", WorkflowCode);
+            WorkflowRule.DeleteAll(true);
+        end else begin
             Workflow.Init();
             Workflow.Code := WorkflowCode;
             Workflow.Description := DocumentApprovalWorkflowDescTxt;
-            Workflow.Category := 'FIN';
+            Workflow.Category := 'APPROVALS';
             Workflow.Template := false;
             Workflow.Enabled := false;
             Workflow.Insert(true);
-        end else begin
-            // Clear existing steps to rebuild
-            WorkflowStep.SetRange("Workflow Code", WorkflowCode);
-            WorkflowStep.DeleteAll(true);
         end;
 
-        // --- STEP SEQUENCE ---
+        // BRANCH 1: Send for Approval Flow
+        SendEventStepID := InsertWorkflowEventStep(WorkflowCode, GetSendDocApprovalForApprovalEventCode(), 0, true);
+        InsertEventCondition(WorkflowCode, SendEventStepID);
 
-        // 1. WHEN Approval of a Document is requested
-        InsertWorkflowStep(WorkflowCode, 1, GetSendDocApprovalForApprovalEventCode(), 0, true);
+        SetPendingStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.SetStatusToPendingApprovalCode(), SendEventStepID);
+        CreateRequestsStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.CreateApprovalRequestsCode(), SetPendingStepID);
+        SetApprovalArgument(WorkflowCode, CreateRequestsStepID);
+        SendRequestStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.SendApprovalRequestForApprovalCode(), CreateRequestsStepID);
 
-        // 2. THEN Set Status to Pending Approval
-        InsertWorkflowStep(WorkflowCode, 2, WorkflowResponseHandling.SetStatusToPendingApprovalCode(), 1, false);
+        // BRANCH 2: Approval Approved Flow
+        ApproveEventStepID := InsertWorkflowEventStep(WorkflowCode, WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode(), SendRequestStepID, false);
+        ReleaseStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.ReleaseDocumentCode(), ApproveEventStepID);
 
-        // 3. THEN Create an approval request (Custom Response)
-        InsertWorkflowStep(WorkflowCode, 3, GetCreateDocApprRequestsCode(), 2, false);
-        SetApprovalArgument(WorkflowCode, 3); // Sets Direct Approver by default
+        // BRANCH 3: Approval Rejected Flow
+        RejectEventStepID := InsertWorkflowEventStep(WorkflowCode, WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode(), SendRequestStepID, false);
+        RejectRequestStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.RejectAllApprovalRequestsCode(), RejectEventStepID);
+        ReopenOnRejectStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.OpenDocumentCode(), RejectRequestStepID);
 
-        // 4. THEN Send approval request
-        InsertWorkflowStep(WorkflowCode, 4, WorkflowResponseHandling.SendApprovalRequestForApprovalCode(), 3, false);
+        // BRANCH 4: Approval Delegated Flow
+        DelegateEventStepID := InsertWorkflowEventStep(WorkflowCode, WorkflowEventHandling.RunWorkflowOnDelegateApprovalRequestCode(), SendRequestStepID, false);
+        SendDelegateStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.SendApprovalRequestForApprovalCode(), DelegateEventStepID);
 
-        // 5. WHEN Approval is approved
-        InsertWorkflowStep(WorkflowCode, 5, WorkflowEventHandling.RunWorkflowOnApproveApprovalRequestCode(), 4, false);
-
-        // 6. THEN Release the document
-        InsertWorkflowStep(WorkflowCode, 6, WorkflowResponseHandling.ReleaseDocumentCode(), 5, false);
-
-        // 7. WHEN Approval is rejected
-        InsertWorkflowStep(WorkflowCode, 7, WorkflowEventHandling.RunWorkflowOnRejectApprovalRequestCode(), 4, false);
-
-        // 8. THEN Open the document
-        InsertWorkflowStep(WorkflowCode, 8, WorkflowResponseHandling.OpenDocumentCode(), 7, false);
-
-        // 9. WHEN Approval is cancelled
-        InsertWorkflowStep(WorkflowCode, 9, GetCancelDocApprovalEventCode(), 0, true);
-
-        // 10. THEN Cancel all requests
-        InsertWorkflowStep(WorkflowCode, 10, WorkflowResponseHandling.CancelAllApprovalRequestsCode(), 9, false);
-
-        // 11. THEN Open the document
-        InsertWorkflowStep(WorkflowCode, 11, WorkflowResponseHandling.OpenDocumentCode(), 10, false);
+        // BRANCH 5: Cancel Approval Flow
+        CancelEventStepID := InsertWorkflowEventStep(WorkflowCode, GetCancelDocApprovalEventCode(), 0, true);
+        InsertEventCondition(WorkflowCode, CancelEventStepID);
+        CancelRequestStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.CancelAllApprovalRequestsCode(), CancelEventStepID);
+        ReopenOnCancelStepID := InsertWorkflowResponseStep(WorkflowCode, WorkflowResponseHandling.OpenDocumentCode(), CancelRequestStepID);
 
         exit(true);
     end;
 
-    local procedure InsertWorkflowStep(WorkflowCode: Code[20]; StepID: Integer; FunctionName: Code[128]; PreviousStepID: Integer; EntryPoint: Boolean)
+    local procedure InsertWorkflowEventStep(WorkflowCode: Code[20]; EventCode: Code[128]; PreviousStepID: Integer; IsEntryPoint: Boolean): Integer
+    var
+        WorkflowStep: Record "Workflow Step";
+        NextID: Integer;
+    begin
+        NextID := GetNextStepID(WorkflowCode);
+
+        WorkflowStep.Init();
+        WorkflowStep."Workflow Code" := WorkflowCode;
+        WorkflowStep.ID := NextID;
+        WorkflowStep.Type := WorkflowStep.Type::"Event";
+        WorkflowStep."Function Name" := EventCode;
+        WorkflowStep."Entry Point" := IsEntryPoint;
+        WorkflowStep."Previous Workflow Step ID" := PreviousStepID;
+        WorkflowStep.Insert(true);
+
+        exit(NextID);
+    end;
+
+    local procedure InsertWorkflowResponseStep(WorkflowCode: Code[20]; ResponseCode: Code[128]; PreviousStepID: Integer): Integer
+    var
+        WorkflowStep: Record "Workflow Step";
+        NextID: Integer;
+    begin
+        NextID := GetNextStepID(WorkflowCode);
+
+        WorkflowStep.Init();
+        WorkflowStep."Workflow Code" := WorkflowCode;
+        WorkflowStep.ID := NextID;
+        WorkflowStep.Type := WorkflowStep.Type::Response;
+        WorkflowStep."Function Name" := ResponseCode;
+        WorkflowStep."Entry Point" := false;
+        WorkflowStep."Previous Workflow Step ID" := PreviousStepID;
+        WorkflowStep."Sequence No." := 1;
+        WorkflowStep.Insert(true);
+
+        exit(NextID);
+    end;
+
+    local procedure GetNextStepID(WorkflowCode: Code[20]): Integer
     var
         WorkflowStep: Record "Workflow Step";
     begin
-        WorkflowStep.Init();
-        WorkflowStep."Workflow Code" := WorkflowCode;
-        WorkflowStep.ID := StepID;
-        WorkflowStep."Function Name" := FunctionName;
-        WorkflowStep."Previous Workflow Step ID" := PreviousStepID;
-        WorkflowStep."Entry Point" := EntryPoint;
-        if not EntryPoint then
-            WorkflowStep."Sequence No." := 1;
+        WorkflowStep.SetRange("Workflow Code", WorkflowCode);
+        if WorkflowStep.FindLast() then
+            exit(WorkflowStep.ID + 1);
+        exit(1);
+    end;
 
-        if EntryPoint then
-            WorkflowStep.Type := WorkflowStep.Type::"Event"
-        else
-            WorkflowStep.Type := WorkflowStep.Type::Response;
+    local procedure InsertEventCondition(WorkflowCode: Code[20]; StepID: Integer)
+    var
+        WorkflowStep: Record "Workflow Step";
+        WorkflowStepArgument: Record "Workflow Step Argument";
+    begin
+        if not WorkflowStep.Get(WorkflowCode, StepID) then
+            exit;
 
-        WorkflowStep.Insert(true);
+        WorkflowStepArgument.Init();
+        WorkflowStepArgument.ID := CreateGuid();
+        WorkflowStepArgument.Type := WorkflowStepArgument.Type::"Event";
+        WorkflowStepArgument."Table No." := Database::"Document Approval Header";
+        WorkflowStepArgument.Insert(true);
+
+        WorkflowStep.Argument := WorkflowStepArgument.ID;
+        WorkflowStep.Modify(true);
     end;
 
     local procedure SetApprovalArgument(WorkflowCode: Code[20]; StepID: Integer)
@@ -337,6 +526,9 @@ codeunit 77101 "Document Approval Workflow"
         WorkflowStepArgument.Type := WorkflowStepArgument.Type::Response;
         WorkflowStepArgument."Approver Type" := WorkflowStepArgument."Approver Type"::Approver;
         WorkflowStepArgument."Approver Limit Type" := WorkflowStepArgument."Approver Limit Type"::"Direct Approver";
+        WorkflowStepArgument."Table No." := Database::"Document Approval Header";
+        WorkflowStepArgument."Link Target Page" := Page::"Document Approval Card";
+        WorkflowStepArgument."Workflow User Group Code" := '';
         WorkflowStepArgument.Insert(true);
 
         WorkflowStep.Argument := WorkflowStepArgument.ID;
@@ -344,18 +536,11 @@ codeunit 77101 "Document Approval Workflow"
     end;
 
     // =========================================
-    // UI TRIGGERS
+    // HELPER: Check if workflow is enabled
     // =========================================
 
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Document Approval Management", 'OnSendForApproval', '', false, false)]
-    local procedure OnSendForApproval(var DocumentApprovalHeader: Record "Document Approval Header")
+    procedure IsDocumentApprovalWorkflowEnabled(var DocumentApprovalHeader: Record "Document Approval Header"): Boolean
     begin
-        WorkflowMgmt.HandleEvent(GetSendDocApprovalForApprovalEventCode(), DocumentApprovalHeader);
-    end;
-
-    [EventSubscriber(ObjectType::Codeunit, Codeunit::"Document Approval Management", 'OnCancelApproval', '', false, false)]
-    local procedure OnCancelApproval(var DocumentApprovalHeader: Record "Document Approval Header")
-    begin
-        WorkflowMgmt.HandleEvent(GetCancelDocApprovalEventCode(), DocumentApprovalHeader);
+        exit(WorkflowMgmt.CanExecuteWorkflow(DocumentApprovalHeader, GetSendDocApprovalForApprovalEventCode()));
     end;
 }

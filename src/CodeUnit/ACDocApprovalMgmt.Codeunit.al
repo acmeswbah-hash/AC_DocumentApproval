@@ -1,73 +1,10 @@
+/// <summary>
+/// Codeunit Document Approval Management (ID 77112)
+/// Manages Document Approval workflow actions.
+/// </summary>
 codeunit 77112 "Document Approval Management"
 {
-    // This codeunit provides high-level procedures for the Document Approval UI
-    // and triggers workflow events. Logic for status changes and approval entry 
-    // creation is now consolidated in codeunit 77101 "Document Approval Workflow".
-
-    var
-        WorkflowMgmt: Codeunit "Workflow Management";
-        AlreadyApprovedErr: Label 'This document has already been approved.';
-        NoWorkflowEnabledErr: Label 'No approval workflow for this record type is enabled.';
-        PendingApprovalErr: Label 'There is an approval request pending for this document.';
-        ApprovalRequestSentMsg: Label 'An approval request has been sent.';
-        DocumentReopenedMsg: Label 'The document has been reopened.';
-
-    procedure SendForApproval(var DocumentApprovalHeader: Record "Document Approval Header")
-    begin
-        // Validate document has lines and amount
-        DocumentApprovalHeader.ValidateForApproval();
-
-        // Check if approval workflow is enabled
-        if not IsDocumentApprovalWorkflowEnabled(DocumentApprovalHeader) then
-            Error(NoWorkflowEnabledErr);
-
-        // Check current status
-        if DocumentApprovalHeader.Status = DocumentApprovalHeader.Status::Approved then
-            Error(AlreadyApprovedErr);
-
-        if DocumentApprovalHeader.Status = DocumentApprovalHeader.Status::"Pending Approval" then
-            Error(PendingApprovalErr);
-
-        // Trigger the workflow event
-        OnSendForApproval(DocumentApprovalHeader);
-
-        // Refresh record to get updated status from workflow
-        if DocumentApprovalHeader.Get(DocumentApprovalHeader."No.") then;
-
-        Message(ApprovalRequestSentMsg);
-    end;
-
-    procedure CancelApprovalRequest(var DocumentApprovalHeader: Record "Document Approval Header")
-    begin
-        // Trigger the workflow event
-        OnCancelApproval(DocumentApprovalHeader);
-        
-        // Refresh record
-        if DocumentApprovalHeader.Get(DocumentApprovalHeader."No.") then;
-    end;
-
-    procedure ReopenDocument(var DocumentApprovalHeader: Record "Document Approval Header")
-    begin
-        if DocumentApprovalHeader.Status = DocumentApprovalHeader.Status::Approved then
-            Error(AlreadyApprovedErr);
-
-        DocumentApprovalHeader.Status := DocumentApprovalHeader.Status::Open;
-        DocumentApprovalHeader.Modify(true);
-
-        Message(DocumentReopenedMsg);
-    end;
-
-    procedure IsDocumentApprovalWorkflowEnabled(var DocumentApprovalHeader: Record "Document Approval Header"): Boolean
-    var
-        DocumentApprovalWorkflow: Codeunit "Document Approval Workflow";
-    begin
-        exit(WorkflowMgmt.CanExecuteWorkflow(DocumentApprovalHeader, DocumentApprovalWorkflow.GetSendDocApprovalForApprovalEventCode()));
-    end;
-
-    // ============================================
-    // INTEGRATION EVENTS
-    // ============================================
-
+    // Integration Events for workflow
     [IntegrationEvent(false, false)]
     procedure OnSendForApproval(var DocumentApprovalHeader: Record "Document Approval Header")
     begin
@@ -78,6 +15,79 @@ codeunit 77112 "Document Approval Management"
     begin
     end;
 
-    // The manual approval procedures (CreateApprovalRequest, etc.) have been removed 
-    // to ensure standard BC Workflow engine is used exclusively.
+    /// <summary>
+    /// Sends the document for approval.
+    /// </summary>
+    procedure SendForApproval(var DocumentApprovalHeader: Record "Document Approval Header")
+    var
+        DocApprovalWorkflow: Codeunit "Document Approval Workflow";
+        NotOpenErr: Label 'You can only send a document for approval when the status is Open.';
+        WorkflowNotEnabledErr: Label 'No approval workflow is enabled for this document type.';
+    begin
+        // Validate status
+        if DocumentApprovalHeader.Status <> DocumentApprovalHeader.Status::Open then
+            Error(NotOpenErr);
+
+        // Validate workflow is enabled
+        if not DocApprovalWorkflow.IsDocumentApprovalWorkflowEnabled(DocumentApprovalHeader) then
+            Error(WorkflowNotEnabledErr);
+
+        // Validate document has lines
+        DocumentApprovalHeader.ValidateForApproval();
+
+        // Trigger workflow event
+        OnSendForApproval(DocumentApprovalHeader);
+    end;
+
+    /// <summary>
+    /// Cancels the approval request.
+    /// </summary>
+    procedure CancelApprovalRequest(var DocumentApprovalHeader: Record "Document Approval Header")
+    var
+        NotPendingErr: Label 'You can only cancel approval for documents with Pending Approval status.';
+    begin
+        // Validate status
+        if DocumentApprovalHeader.Status <> DocumentApprovalHeader.Status::"Pending Approval" then
+            Error(NotPendingErr);
+
+        // Trigger workflow event
+        OnCancelApproval(DocumentApprovalHeader);
+    end;
+
+    /// <summary>
+    /// Reopens the document for editing.
+    /// Can be used on Rejected or Approved documents.
+    /// </summary>
+    procedure ReopenDocument(var DocumentApprovalHeader: Record "Document Approval Header")
+    var
+        ReopenConfirmQst: Label 'Are you sure you want to reopen this document? The approval history will be preserved but the document will need to be sent for approval again.';
+        StatusErr: Label 'You can only reopen documents with Rejected or Approved status.';
+    begin
+        // Validate status - allow reopen from Rejected or Approved
+        if not (DocumentApprovalHeader.Status in [DocumentApprovalHeader.Status::Rejected, DocumentApprovalHeader.Status::Approved]) then
+            Error(StatusErr);
+
+        // Confirm reopen
+        if not Confirm(ReopenConfirmQst) then
+            exit;
+
+        // Reset document to Open status
+        DocumentApprovalHeader.Status := DocumentApprovalHeader.Status::Open;
+        DocumentApprovalHeader."Approved By" := '';
+        DocumentApprovalHeader."Approved Date" := 0D;
+        DocumentApprovalHeader."Date-Time Sent for Approval" := 0DT;
+        DocumentApprovalHeader.Modify(true);
+
+        Message('Document has been reopened and can now be edited and sent for approval again.');
+    end;
+
+    /// <summary>
+    /// Checks if the Document Approval workflow is enabled.
+    /// </summary>
+    procedure IsDocumentApprovalWorkflowEnabled(var DocumentApprovalHeader: Record "Document Approval Header"): Boolean
+    var
+        DocApprovalWorkflow: Codeunit "Document Approval Workflow";
+    begin
+        exit(DocApprovalWorkflow.IsDocumentApprovalWorkflowEnabled(DocumentApprovalHeader));
+    end;
 }
