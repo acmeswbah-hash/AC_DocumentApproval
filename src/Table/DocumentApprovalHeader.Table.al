@@ -42,10 +42,23 @@ table 77100 "Document Approval Header"
             Caption = 'Document Type';
             DataClassification = CustomerContent;
             TableRelation = "Document Approval Type"."ID";
+            ValidateTableRelation = true;
 
             trigger OnValidate()
             begin
                 TestStatusOpen();
+            end;
+
+            trigger OnLookup()
+            var
+                DocApprovalType: Record "Document Approval Type";
+                DocApprovalTypes: Page "Document Approval Types";
+            begin
+                DocApprovalTypes.LookupMode := true;
+                if DocApprovalTypes.RunModal() = Action::LookupOK then begin
+                    DocApprovalTypes.GetRecord(DocApprovalType);
+                    "Document Type" := DocApprovalType."ID";
+                end;
             end;
         }
         field(4; "Document Description"; Text[250])
@@ -61,7 +74,6 @@ table 77100 "Document Approval Header"
         field(5; "Total Amount"; Decimal)
         {
             Caption = 'Total Amount';
-            //DataClassification = CustomerContent;
             Editable = false;
             FieldClass = FlowField;
             CalcFormula = sum("Document Approval Line"."Line Amount" where("Document No." = field("No.")));
@@ -121,6 +133,13 @@ table 77100 "Document Approval Header"
             DataClassification = CustomerContent;
             Editable = false;
         }
+        field(15; "Document Type Description"; Text[100])
+        {
+            Caption = 'Document Type Description';
+            FieldClass = FlowField;
+            CalcFormula = lookup("Document Approval Type".Description where("ID" = field("Document Type")));
+            Editable = false;
+        }
     }
 
     keys
@@ -174,13 +193,14 @@ table 77100 "Document Approval Header"
 
     trigger OnModify()
     begin
-        // We removed TestStatusOpen from here to allow system modifications (like status changes or background updates)
-        // while the document is locked. Field-level validations and OnDelete still enforce the lock.
+        "Last Modified By User ID" := CopyStr(UserId, 1, MaxStrLen("Last Modified By User ID"));
     end;
 
     trigger OnDelete()
     begin
-        TestStatusOpen();
+        // Only allow delete when Open or Rejected
+        if not (Status in [Status::Open, Status::Rejected]) then
+            Error(StatusErr, Status);
 
         DocumentApprovalLine.SetRange("Document No.", "No.");
         if not DocumentApprovalLine.IsEmpty then
@@ -195,11 +215,11 @@ table 77100 "Document Approval Header"
     end;
 
     /// <summary>
-    /// Tests if the document status is Open, allowing modifications.
+    /// Tests if the document status is Open or Rejected, allowing modifications.
     /// </summary>
     procedure TestStatusOpen()
     begin
-        if (Status <> Status::Open) and (Status <> Status::Rejected) then
+        if not (Status in [Status::Open, Status::Rejected]) then
             Error(StatusErr, Status);
     end;
 
@@ -246,5 +266,17 @@ table 77100 "Document Approval Header"
         CalcFields("Total Amount");
         if "Total Amount" <= 0 then
             Error(ZeroAmountErr);
+    end;
+
+    /// <summary>
+    /// Gets the Document Type Description
+    /// </summary>
+    procedure GetDocumentTypeDescription(): Text[100]
+    var
+        DocApprovalType: Record "Document Approval Type";
+    begin
+        if DocApprovalType.Get("Document Type") then
+            exit(DocApprovalType.Description);
+        exit('');
     end;
 }

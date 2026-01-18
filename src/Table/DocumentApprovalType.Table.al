@@ -1,6 +1,6 @@
 /// <summary>
-/// Table Document Approval Type (ID 77103)
-/// Stores the document types for Document Approval documents.
+/// Table Document Approval Type (ID 77102)
+/// Stores the document types available for Document Approvals.
 /// </summary>
 table 77103 "Document Approval Type"
 {
@@ -22,6 +22,17 @@ table 77103 "Document Approval Type"
             Caption = 'Description';
             DataClassification = CustomerContent;
         }
+        field(3; "Requires Attachment"; Boolean)
+        {
+            Caption = 'Requires Attachment';
+            DataClassification = CustomerContent;
+        }
+        field(4; Active; Boolean)
+        {
+            Caption = 'Active';
+            DataClassification = CustomerContent;
+            InitValue = true;
+        }
     }
 
     keys
@@ -29,6 +40,9 @@ table 77103 "Document Approval Type"
         key(PK; "ID")
         {
             Clustered = true;
+        }
+        key(Key2; Description)
+        {
         }
     }
 
@@ -45,7 +59,7 @@ table 77103 "Document Approval Type"
     trigger OnDelete()
     var
         DocumentApprovalHeader: Record "Document Approval Header";
-        CannotDeleteErr: Label 'You cannot delete %1 because it is used in one or more Document Approval documents.', Comment = '%1 = Document Type ID';
+        CannotDeleteErr: Label 'You cannot delete %1 because it is used in one or more documents.', Comment = '%1 = ID';
     begin
         DocumentApprovalHeader.SetRange("Document Type", "ID");
         if not DocumentApprovalHeader.IsEmpty then
