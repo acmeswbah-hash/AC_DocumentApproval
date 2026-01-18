@@ -1,6 +1,6 @@
 /// <summary>
 /// Page Document Approval List (ID 77101)
-/// List page displaying all Document Approval documents.
+/// List page for viewing all Document Approval documents.
 /// </summary>
 page 77101 "Document Approval List"
 {
@@ -10,14 +10,13 @@ page 77101 "Document Approval List"
     CardPageId = "Document Approval Card";
     ApplicationArea = All;
     UsageCategory = Lists;
-    RefreshOnActivate = true;
     Editable = false;
 
     layout
     {
         area(Content)
         {
-            repeater(Group)
+            repeater(Lines)
             {
                 field("No."; Rec."No.")
                 {
@@ -29,9 +28,10 @@ page 77101 "Document Approval List"
                     ApplicationArea = All;
                     ToolTip = 'Specifies the document date.';
                 }
-                field("Document Type"; Rec."Document Type")
+                field("Document Type Description"; Rec."Document Type Description")
                 {
                     ApplicationArea = All;
+                    Caption = 'Document Type';
                     ToolTip = 'Specifies the document type.';
                 }
                 field("Document Description"; Rec."Document Description")
@@ -39,17 +39,16 @@ page 77101 "Document Approval List"
                     ApplicationArea = All;
                     ToolTip = 'Specifies a description of the document.';
                 }
-                field("Total Amount"; Rec."Total Amount")
-                {
-                    ApplicationArea = All;
-                    ToolTip = 'Specifies the total amount of all lines.';
-                    Style = Strong;
-                }
                 field(Status; Rec.Status)
                 {
                     ApplicationArea = All;
                     ToolTip = 'Specifies the current status of the document.';
                     StyleExpr = StatusStyleTxt;
+                }
+                field("Total Amount"; Rec."Total Amount")
+                {
+                    ApplicationArea = All;
+                    ToolTip = 'Specifies the total amount of all lines.';
                 }
                 field("Created By"; Rec."Created By")
                 {
@@ -65,23 +64,28 @@ page 77101 "Document Approval List"
                 {
                     ApplicationArea = All;
                     ToolTip = 'Specifies the user who approved the document.';
+                    Visible = false;
                 }
                 field("Approved Date"; Rec."Approved Date")
                 {
                     ApplicationArea = All;
                     ToolTip = 'Specifies when the document was approved.';
+                    Visible = false;
                 }
             }
         }
         area(FactBoxes)
         {
-            part(AttachmentFactBox; "Doc. Attachment List Factbox")
+            part(ApprovalFactBox; "Approval FactBox")
             {
                 ApplicationArea = All;
-                Caption = 'Attachments';
-                SubPageLink = "Table ID" = const(77100), "No." = field("No.");
+                SubPageLink = "Table ID" = const(77100), "Document No." = field("No.");
             }
             systempart(Notes; Notes)
+            {
+                ApplicationArea = All;
+            }
+            systempart(Links; Links)
             {
                 ApplicationArea = All;
             }
@@ -102,20 +106,20 @@ page 77101 "Document Approval List"
                 PromotedIsBig = true;
                 PromotedOnly = true;
                 Enabled = CanSendForApproval;
-                ToolTip = 'Send the document for approval.';
+                ToolTip = 'Send the selected document for approval.';
 
                 trigger OnAction()
                 var
-                    DocumentApprovalMgmt: Codeunit "Document Approval Management";
+                    DocApprovalMgmt: Codeunit "Document Approval Management";
                 begin
-                    DocumentApprovalMgmt.SendForApproval(Rec);
+                    DocApprovalMgmt.SendForApproval(Rec);
                     CurrPage.Update(false);
                 end;
             }
             action(CancelApprovalRequest)
             {
                 ApplicationArea = All;
-                Caption = 'Cancel Approval Request';
+                Caption = 'Cancel Approval';
                 Image = CancelApprovalRequest;
                 Promoted = true;
                 PromotedCategory = Process;
@@ -125,9 +129,9 @@ page 77101 "Document Approval List"
 
                 trigger OnAction()
                 var
-                    DocumentApprovalMgmt: Codeunit "Document Approval Management";
+                    DocApprovalMgmt: Codeunit "Document Approval Management";
                 begin
-                    DocumentApprovalMgmt.CancelApprovalRequest(Rec);
+                    DocApprovalMgmt.CancelApprovalRequest(Rec);
                     CurrPage.Update(false);
                 end;
             }
@@ -166,10 +170,15 @@ page 77101 "Document Approval List"
         SetStatusStyle();
     end;
 
+    trigger OnAfterGetCurrRecord()
+    begin
+        SetControlVisibility();
+    end;
+
     local procedure SetControlVisibility()
     begin
-        CanSendForApproval := (Rec.Status = Rec.Status::Open);
-        //and DocumentApprovalMgmt.IsDocumentApprovalWorkflowEnabled(Rec);
+        CanSendForApproval := (Rec.Status = Rec.Status::Open) and
+                             DocumentApprovalMgmt.IsDocumentApprovalWorkflowEnabled(Rec);
         CanCancelApproval := Rec.Status = Rec.Status::"Pending Approval";
     end;
 
@@ -184,6 +193,8 @@ page 77101 "Document Approval List"
                 StatusStyleTxt := 'Favorable';
             Rec.Status::Rejected:
                 StatusStyleTxt := 'Unfavorable';
+            else
+                StatusStyleTxt := 'Standard';
         end;
     end;
 }

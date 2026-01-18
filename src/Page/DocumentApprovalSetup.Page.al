@@ -29,28 +29,38 @@ page 77103 "Document Approval Setup"
             }
             group(Instructions)
             {
-                Caption = 'Instructions';
+                Caption = 'Setup Instructions';
 
                 label(WorkflowInstructions)
                 {
                     ApplicationArea = All;
-                    Caption = 'After configuring the number series, you need to:';
+                    Caption = 'Follow these steps to set up Document Approval workflow:';
                     Style = Strong;
                 }
                 label(Step1)
                 {
                     ApplicationArea = All;
-                    Caption = '1. Go to Workflows and create a new workflow from the "Document Approval Workflow" template.';
+                    Caption = '1. Configure the Number Series above.';
                 }
                 label(Step2)
                 {
                     ApplicationArea = All;
-                    Caption = '2. Configure the Approval User Setup with appropriate approvers and limits.';
+                    Caption = '2. Click "Register Workflow Responses" to register response combinations.';
                 }
                 label(Step3)
                 {
                     ApplicationArea = All;
-                    Caption = '3. Enable the workflow to start using Document Approvals.';
+                    Caption = '3. Click "Create/Refresh Workflow" to create the workflow template.';
+                }
+                label(Step4)
+                {
+                    ApplicationArea = All;
+                    Caption = '4. Configure Approval User Setup with appropriate approvers.';
+                }
+                label(Step5)
+                {
+                    ApplicationArea = All;
+                    Caption = '5. Go to Workflows page and Enable the "DOC-APPROV-WF" workflow.';
                 }
             }
         }
@@ -112,21 +122,53 @@ page 77103 "Document Approval Setup"
                         Message('Setup record already exists.');
                 end;
             }
+            action(RegisterWorkflowResponses)
+            {
+                ApplicationArea = All;
+                Caption = '1. Register Workflow Responses';
+                Image = Register;
+                Promoted = true;
+                PromotedCategory = Process;
+                PromotedIsBig = true;
+                ToolTip = 'Register the workflow response combinations. Run this FIRST before creating the workflow.';
+
+                trigger OnAction()
+                var
+                    DocApprovalWorkflow: Codeunit "Document Approval Workflow";
+                begin
+                    DocApprovalWorkflow.RegisterWorkflowResponseCombinations();
+                end;
+            }
+            action(CleanupWorkflowEvents)
+            {
+                ApplicationArea = All;
+                Caption = 'Cleanup Workflow Events';
+                Image = ClearLog;
+                ToolTip = 'Clean up orphaned workflow events. Run this if you see "already exists" errors.';
+
+                trigger OnAction()
+                var
+                    DocApprovalWorkflow: Codeunit "Document Approval Workflow";
+                begin
+                    DocApprovalWorkflow.CleanupOrphanedWorkflowEvents();
+                end;
+            }
             action(CreateWorkflow)
             {
                 ApplicationArea = All;
-                Caption = 'Create/Refresh Workflow';
+                Caption = '2. Create/Refresh Workflow';
                 Image = CreateWorkflow;
                 Promoted = true;
                 PromotedCategory = Process;
-                ToolTip = 'Create or refresh the Document Approval workflow template and its steps.';
+                PromotedIsBig = true;
+                ToolTip = 'Create or refresh the Document Approval workflow. Run this AFTER registering responses.';
 
                 trigger OnAction()
                 var
                     DocApprovalWorkflow: Codeunit "Document Approval Workflow";
                 begin
                     if DocApprovalWorkflow.CreateDocumentApprovalWorkflowTemplate() then
-                        Message('Document Approval workflow template has been created/refreshed successfully. Please enable it in the Workflows page.');
+                        Message('Document Approval workflow has been created/refreshed successfully.\n\nNext steps:\n1. Go to Workflows page\n2. Open DOC-APPROV-WF\n3. Enable the workflow');
                 end;
             }
         }
